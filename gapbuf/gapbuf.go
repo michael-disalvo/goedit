@@ -82,6 +82,10 @@ func (self *GapBuffer) Get(idx int) rune {
 	return self.arr[self.mapIndex(idx)]
 }
 
+func (self *GapBuffer) Push(ch rune) {
+	self.arr = append(self.arr, ch)
+}
+
 func (self *GapBuffer) Set(idx int, ch rune) {
 	if idx < 0 || idx >= self.innerLen() {
 		panic(fmt.Sprintf("cannot set at index %v of gap buffer", idx))
