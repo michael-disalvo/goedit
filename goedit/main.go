@@ -19,6 +19,42 @@ type EditSession struct {
 	filename string           // name of the file we are editing
 }
 
+// will map the 2D cell coordinates to the index in the gap buffer
+func (session *EditSession) gridCellToBufferIndex(x, y int) int {
+	index := 0
+	for i := range y {
+		index += session.lineLens[i]
+	}
+
+	currX := 0
+	for currX < x {
+		ch := session.buf.Get(index)
+		index += 1
+		currX += runeWidth(ch)
+	}
+	return index
+}
+
+type Cursor struct {
+	x int
+	y int
+}
+
+func newCursor() Cursor {
+	return Cursor{}
+}
+
+func (cursor *Cursor) display() {
+	termbox.SetCursor(cursor.x, cursor.y)
+}
+
+// TODO: what happens when we get to the end of the line?
+func moveRight(cursor *Cursor, session *EditSession) {
+	currBufIndex := session.gridCellToBufferIndex(cursor.x, cursor.y)
+	currCh := session.buf.Get(currBufIndex)
+	cursor.x += runeWidth(currCh)
+}
+
 func runeWidth(ch rune) int {
 	switch ch {
 	case '\t':
@@ -37,6 +73,9 @@ func (session *EditSession) display() {
 			y += 1
 			x = 0
 			continue
+		}
+		if session.gridCellToBufferIndex(x, y) != i {
+			panic("gridCellToBuffer does not work")
 		}
 		termbox.SetCell(x, y, ch, termbox.ColorWhite, termbox.ColorDefault)
 		x += runeWidth(ch)
@@ -93,6 +132,8 @@ func main() {
 		os.Exit(1)
 	}
 
+	cursor := newCursor()
+
 	err = termbox.Init()
 	if err != nil {
 		fmt.Printf("Error initializing termbox: %w\n", err)
@@ -101,6 +142,7 @@ func main() {
 	defer termbox.Close()
 
 	session.display()
+	cursor.display()
 	termbox.Flush()
 
 mainloop:
@@ -110,7 +152,13 @@ mainloop:
 			switch ev.Key {
 			case termbox.KeyEsc:
 				break mainloop
+			case termbox.KeyArrowRight:
+				// TODO: organize this function better
+				moveRight(&cursor, &session)
 			}
 		}
+		session.display()
+		cursor.display()
+		termbox.Flush()
 	}
 }
