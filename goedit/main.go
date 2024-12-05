@@ -5,17 +5,27 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"time"
 
 	"github.com/mattn/go-runewidth"
 	"github.com/michael-disalvo/gapbuf"
 	"github.com/nsf/termbox-go"
 )
 
+const cTabWidth int = 4
+
 type EditSession struct {
 	buf      gapbuf.GapBuffer // the actual text backing
 	lineLens []int            // the length of each line, used to map (x, y) -> logical index
 	filename string           // name of the file we are editing
+}
+
+func runeWidth(ch rune) int {
+	switch ch {
+	case '\t':
+		return cTabWidth
+	default:
+		return runewidth.RuneWidth(ch)
+	}
 }
 
 func (session *EditSession) display() {
@@ -29,7 +39,7 @@ func (session *EditSession) display() {
 			continue
 		}
 		termbox.SetCell(x, y, ch, termbox.ColorWhite, termbox.ColorDefault)
-		x += runewidth.RuneWidth(ch)
+		x += runeWidth(ch)
 	}
 }
 
@@ -92,5 +102,15 @@ func main() {
 
 	session.display()
 	termbox.Flush()
-	time.Sleep(time.Second * 2)
+
+mainloop:
+	for {
+		switch ev := termbox.PollEvent(); ev.Type {
+		case termbox.EventKey:
+			switch ev.Key {
+			case termbox.KeyEsc:
+				break mainloop
+			}
+		}
+	}
 }
