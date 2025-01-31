@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"github.com/mattn/go-runewidth"
 	"github.com/michael-disalvo/gapbuf"
@@ -13,46 +14,28 @@ import (
 
 const cTabWidth int = 4
 
-type EditSession struct {
-	buf      gapbuf.GapBuffer // the actual text backing
-	lineLens []int            // the length of each line, used to map (x, y) -> logical index
-	filename string           // name of the file we are editing
+type Logger struct {
+	file *os.File
 }
 
-// will map the 2D cell coordinates to the index in the gap buffer
-func (session *EditSession) gridCellToBufferIndex(x, y int) int {
-	index := 0
-	for i := range y {
-		index += session.lineLens[i]
+func newLogger(filePath string) (*Logger, error) {
+	file, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return nil, err
 	}
-
-	currX := 0
-	for currX < x {
-		ch := session.buf.Get(index)
-		index += 1
-		currX += runeWidth(ch)
-	}
-	return index
+	return &Logger{file: file}, nil
 }
 
-type Cursor struct {
-	x int
-	y int
+func (l *Logger) logMessage(message string) error {
+	timestamp := time.Now().Format("2006-01-02 15:04:05")
+	logEntry := fmt.Sprintf("%s: %s\n", timestamp, message)
+
+	_, err := l.file.WriteString(logEntry)
+	return err
 }
 
-func newCursor() Cursor {
-	return Cursor{}
-}
-
-func (cursor *Cursor) display() {
-	termbox.SetCursor(cursor.x, cursor.y)
-}
-
-// TODO: what happens when we get to the end of the line?
-func moveRight(cursor *Cursor, session *EditSession) {
-	currBufIndex := session.gridCellToBufferIndex(cursor.x, cursor.y)
-	currCh := session.buf.Get(currBufIndex)
-	cursor.x += runeWidth(currCh)
+func (l *Logger) Close() error {
+	return l.file.Close()
 }
 
 func runeWidth(ch rune) int {
@@ -62,6 +45,20 @@ func runeWidth(ch rune) int {
 	default:
 		return runewidth.RuneWidth(ch)
 	}
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	} else {
+		return b
+	}
+}
+
+type EditSession struct {
+	buf      gapbuf.GapBuffer // the actual text backing
+	filename string           // name of the file we are editing
+	cursor   Cursor
 }
 
 func (session *EditSession) display() {
@@ -74,12 +71,10 @@ func (session *EditSession) display() {
 			x = 0
 			continue
 		}
-		if session.gridCellToBufferIndex(x, y) != i {
-			panic("gridCellToBuffer does not work")
-		}
 		termbox.SetCell(x, y, ch, termbox.ColorWhite, termbox.ColorDefault)
 		x += runeWidth(ch)
 	}
+	session.cursor.display()
 }
 
 func buildEditSession(filename string) (editSession EditSession, err error) {
@@ -91,33 +86,94 @@ func buildEditSession(filename string) (editSession EditSession, err error) {
 
 	file_reader := bufio.NewReader(file)
 	buf := gapbuf.NewGapBuffer()
-	lineLens := make([]int, 0)
-	currentLineLen := 0
+
 	for {
 		ch, _, ioErr := file_reader.ReadRune()
 		if ioErr != nil {
 			if ioErr == io.EOF {
-				lineLens = append(lineLens, currentLineLen)
 				break
 			} else {
 				err = fmt.Errorf("Error reading file: %w", ioErr)
 				return
 			}
 		}
-		currentLineLen += 1
-		if ch == '\n' {
-			lineLens = append(lineLens, currentLineLen)
-			currentLineLen = 0
-		}
 		buf.Push(ch)
 	}
 
+	cursor := newCursor()
 	editSession = EditSession{
 		buf,
-		lineLens,
 		filename,
+		cursor,
 	}
 	return
+}
+
+func (session *EditSession) moveCursorRight() {
+	session.cursor = moveRight(session.cursor, &session.buf)
+}
+
+func (session *EditSession) moveCursorLeft() {
+	session.cursor = moveLeft(session.cursor, &session.buf)
+}
+
+func moveLeft(cursor Cursor, buf *gapbuf.GapBuffer) Cursor {
+	if cursor.x == 0 {
+		return cursor
+	}
+
+	var newIdx int
+	if !cursor.valid {
+		newIdx = cursor.idx
+	} else {
+		newIdx = cursor.idx - 1
+	}
+
+	newX := cursor.x - runeWidth(buf.Get(newIdx))
+	newValid := true
+	return Cursor{
+		x:     newX,
+		y:     cursor.y,
+		valid: newValid,
+		idx:   newIdx,
+	}
+}
+
+func moveRight(cursor Cursor, buf *gapbuf.GapBuffer) Cursor {
+	if !cursor.valid {
+		return cursor
+	}
+
+	ch := buf.Get(cursor.idx)
+	newX := cursor.x + runeWidth(ch)
+	newValid := cursor.idx+1 < buf.Len() && buf.Get(cursor.idx+1) != '\n'
+	newIdx := cursor.idx
+	if newValid {
+		newIdx += 1
+	}
+
+	return Cursor{
+		x:     newX,
+		y:     cursor.y,
+		idx:   newIdx,
+		valid: newValid,
+	}
+}
+
+type Cursor struct {
+	x     int
+	y     int
+	idx   int
+	valid bool
+}
+
+func newCursor() Cursor {
+	return Cursor{valid: true}
+}
+
+func (cursor *Cursor) display() {
+	// TODO: if the cursor was over a wide character, we may have to zero first
+	termbox.SetCursor(cursor.x, cursor.y)
 }
 
 func main() {
@@ -126,23 +182,27 @@ func main() {
 		os.Exit(1)
 	}
 
+	logger, err := newLogger("goedit.out")
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	defer logger.Close()
+
 	session, err := buildEditSession(os.Args[1])
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
 
-	cursor := newCursor()
-
 	err = termbox.Init()
 	if err != nil {
-		fmt.Printf("Error initializing termbox: %w\n", err)
+		fmt.Printf("Error initializing termbox: %v\n", err)
 		os.Exit(1)
 	}
 	defer termbox.Close()
 
 	session.display()
-	cursor.display()
 	termbox.Flush()
 
 mainloop:
@@ -153,12 +213,14 @@ mainloop:
 			case termbox.KeyEsc:
 				break mainloop
 			case termbox.KeyArrowRight:
-				// TODO: organize this function better
-				moveRight(&cursor, &session)
+				session.moveCursorRight()
+				logger.logMessage(fmt.Sprintf("cursor at: %v", session.cursor))
+			case termbox.KeyArrowLeft:
+				session.moveCursorLeft()
+				logger.logMessage(fmt.Sprintf("cursor at: %v", session.cursor))
 			}
 		}
 		session.display()
-		cursor.display()
 		termbox.Flush()
 	}
 }
