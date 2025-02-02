@@ -172,7 +172,6 @@ func newCursor() Cursor {
 }
 
 func (cursor *Cursor) display() {
-	// TODO: if the cursor was over a wide character, we may have to zero first
 	termbox.SetCursor(cursor.x, cursor.y)
 }
 
@@ -219,7 +218,9 @@ mainloop:
 				session.moveCursorLeft()
 				logger.logMessage(fmt.Sprintf("cursor at: %v", session.cursor))
 			}
+			// TODO: move up and move down
 		}
+		termbox.Clear(termbox.ColorWhite, termbox.ColorDefault)
 		session.display()
 		termbox.Flush()
 	}
