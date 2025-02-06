@@ -19,7 +19,7 @@ type Logger struct {
 }
 
 func newLogger(filePath string) (*Logger, error) {
-	file, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY, 0644)
+	file, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +58,8 @@ func maxInt(a, b int) int {
 type EditSession struct {
 	buf      gapbuf.GapBuffer // the actual text backing
 	filename string           // name of the file we are editing
-	cursor   Cursor
+	numCells []int            // the number of used cells in each line
+	cursor   Cursor           // the cursor
 }
 
 func (session *EditSession) display() {
@@ -100,10 +101,24 @@ func buildEditSession(filename string) (editSession EditSession, err error) {
 		buf.Push(ch)
 	}
 
+	numCells := make([]int, 0)
+	currLineCells := 0
+	for i := 0; i < buf.Len(); i++ {
+		ch := buf.Get(i)
+		if ch == '\n' {
+			numCells = append(numCells, currLineCells)
+			currLineCells = 0
+		} else {
+			currLineCells += runeWidth(ch)
+		}
+	}
+	numCells = append(numCells, currLineCells)
+
 	cursor := newCursor()
 	editSession = EditSession{
 		buf,
 		filename,
+		numCells,
 		cursor,
 	}
 	return
