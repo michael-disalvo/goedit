@@ -114,7 +114,8 @@ func buildEditSession(filename string) (editSession EditSession, err error) {
 	}
 	numCells = append(numCells, currLineCells)
 
-	cursor := newCursor()
+	cursor := newCursor(numCells[0])
+
 	editSession = EditSession{
 		buf,
 		filename,
@@ -182,8 +183,9 @@ type Cursor struct {
 	valid bool
 }
 
-func newCursor() Cursor {
-	return Cursor{valid: true}
+func newCursor(numCellsInFirstLine int) Cursor {
+	valid := numCellsInFirstLine > 0
+	return Cursor{valid: valid}
 }
 
 func (cursor *Cursor) display() {
