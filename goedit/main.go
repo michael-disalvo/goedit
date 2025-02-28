@@ -75,7 +75,7 @@ func (session *EditSession) display() {
 		termbox.SetCell(x, y, ch, termbox.ColorWhite, termbox.ColorDefault)
 		x += runeWidth(ch)
 	}
-	session.cursor.display()
+	session.cursor.display(session.numCells)
 }
 
 func buildEditSession(filename string) (editSession EditSession, err error) {
@@ -123,6 +123,17 @@ func buildEditSession(filename string) (editSession EditSession, err error) {
 		cursor,
 	}
 	return
+}
+
+func (session *EditSession) numLines() int {
+	return len(session.numCells)
+}
+
+func (session *EditSession) usedCellsInLine(line int) int {
+	if line < 0 || line >= session.numLines() {
+		return 0
+	}
+	return session.numCells[line]
 }
 
 func (session *EditSession) moveCursorRight() {
@@ -176,6 +187,92 @@ func moveRight(cursor Cursor, buf *gapbuf.GapBuffer) Cursor {
 	}
 }
 
+// TODO: make a moveDown function
+// we should first check if we can move down:
+// 	 * if cursor.y == numLines then we cannot move down
+//   * we are allowed to be on the line below the last line of text in the file
+
+// y' = y + 1
+
+// next, we need to determine if the new cursor will be on a used or unused cell
+
+// finally, we need to get the next index. We should first try to get to the last char in this line, which is the char
+// before the next '\n' or the last char in the buf.
+//   * If we hit the end of the buf, then the next line is blank, and our
+// 	   index should be the last char.
+//   * Otherwise, the next line is not blank and we should continue onto that line
+// Set the index to the new line.
+
+func (session *EditSession) moveCursorDown() {
+	cursor := session.cursor
+	if cursor.y == session.numLines() {
+		return
+	}
+
+	newY := cursor.y + 1
+
+	usedCells := session.usedCellsInLine(newY)
+	newValid := cursor.x < usedCells
+
+	idx := cursor.idx
+	ch := session.buf.Get(cursor.idx)
+	for ch != '\n' && idx < session.buf.Len()-1 {
+		idx += 1
+		ch = session.buf.Get(idx)
+	}
+
+	var newIdx int
+	if usedCells == 0 {
+		newIdx = idx
+	} else if !newValid {
+		// idx to ch before next \n, or end of buffer
+		idx += 1
+		for {
+			if idx == session.buf.Len()-1 {
+				newIdx = idx
+				break
+			}
+			if session.buf.Get(idx+1) == '\n' {
+				newIdx = idx
+				break
+			}
+			idx += 1
+		}
+	} else {
+		// idx to ch s.t. currX + runeWidth(ch) > cursor.x
+		idx += 1
+		currX := 0
+		for {
+			nextWidth := runeWidth(session.buf.Get(idx))
+			if nextWidth+currX > cursor.x {
+				newIdx = idx
+				break
+			}
+			currX += nextWidth
+			idx += 1
+		}
+	}
+
+	newX := cursor.x
+
+	newCursor := Cursor{
+		x:     newX,
+		y:     newY,
+		valid: newValid,
+		idx:   newIdx,
+	}
+	session.cursor = newCursor
+
+}
+
+func minInt(i1, i2 int) int {
+	if i1 < i2 {
+		return i1
+	} else {
+		return i2
+	}
+}
+
 type Cursor struct {
 	x     int
 	y     int
@@ -188,8 +285,9 @@ func newCursor(numCellsInFirstLine int) Cursor {
 	return Cursor{valid: valid}
 }
 
-func (cursor *Cursor) display() {
-	termbox.SetCursor(cursor.x, cursor.y)
+func (cursor *Cursor) display(usedCells []int) {
+	visualX := minInt(usedCells[cursor.y], cursor.x)
+	termbox.SetCursor(visualX, cursor.y)
 }
 
 func main() {
@@ -234,6 +332,9 @@ mainloop:
 			case termbox.KeyArrowLeft:
 				session.moveCursorLeft()
 				logger.logMessage(fmt.Sprintf("cursor at: %v", session.cursor))
+			case termbox.KeyArrowDown:
+				session.moveCursorDown()
+				logger.logMessage(fmt.Sprintf("cursor at :%v", session.cursor))
 			}
 			// TODO: move up and move down
 		}
