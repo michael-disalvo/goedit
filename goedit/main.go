@@ -78,29 +78,24 @@ func (session *EditSession) display() {
 	session.cursor.display(session.numCells)
 }
 
-func buildEditSession(filename string) (editSession EditSession, err error) {
-	file, err := os.Open(filename)
-	if err != nil {
-		return
-	}
-	defer file.Close()
-
-	file_reader := bufio.NewReader(file)
+func gapBufFromReader(reader io.Reader) (gapbuf.GapBuffer, error) {
+	bufReader := bufio.NewReader(reader)
 	buf := gapbuf.NewGapBuffer()
-
 	for {
-		ch, _, ioErr := file_reader.ReadRune()
+		ch, _, ioErr := bufReader.ReadRune()
 		if ioErr != nil {
 			if ioErr == io.EOF {
 				break
 			} else {
-				err = fmt.Errorf("Error reading file: %w", ioErr)
-				return
+				return buf, fmt.Errorf("Error reading rune: %w", ioErr)
 			}
 		}
 		buf.Push(ch)
 	}
+	return buf, nil
+}
 
+func numCellsFromGapBuf(buf *gapbuf.GapBuffer) []int {
 	numCells := make([]int, 0)
 	currLineCells := 0
 	for i := 0; i < buf.Len(); i++ {
@@ -113,6 +108,22 @@ func buildEditSession(filename string) (editSession EditSession, err error) {
 		}
 	}
 	numCells = append(numCells, currLineCells)
+	return numCells
+}
+
+func buildEditSession(filename string) (editSession EditSession, err error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+
+	buf, err := gapBufFromReader(file)
+	if err != nil {
+		return
+	}
+
+	numCells := numCellsFromGapBuf(&buf)
 
 	cursor := newCursor(numCells[0])
 
@@ -141,22 +152,24 @@ func (session *EditSession) moveCursorRight() {
 }
 
 func (session *EditSession) moveCursorLeft() {
-	session.cursor = moveLeft(session.cursor, &session.buf)
+	session.cursor = moveLeft(session.cursor, &session.buf, session.numCells)
 }
 
-func moveLeft(cursor Cursor, buf *gapbuf.GapBuffer) Cursor {
+func moveLeft(cursor Cursor, buf *gapbuf.GapBuffer, numCells []int) Cursor {
 	if cursor.x == 0 {
 		return cursor
 	}
 
+	var newX int
 	var newIdx int
 	if !cursor.valid {
 		newIdx = cursor.idx
+		newX = numCells[cursor.y] - (runeWidth(buf.Get(newIdx)))
 	} else {
 		newIdx = cursor.idx - 1
+		newX = cursor.x - runeWidth(buf.Get(newIdx))
 	}
 
-	newX := cursor.x - runeWidth(buf.Get(newIdx))
 	newValid := true
 	return Cursor{
 		x:     newX,
@@ -187,25 +200,9 @@ func moveRight(cursor Cursor, buf *gapbuf.GapBuffer) Cursor {
 	}
 }
 
-// TODO: make a moveDown function
-// we should first check if we can move down:
-// 	 * if cursor.y == numLines then we cannot move down
-//   * we are allowed to be on the line below the last line of text in the file
-
-// y' = y + 1
-
-// next, we need to determine if the new cursor will be on a used or unused cell
-
-// finally, we need to get the next index. We should first try to get to the last char in this line, which is the char
-// before the next '\n' or the last char in the buf.
-//   * If we hit the end of the buf, then the next line is blank, and our
-// 	   index should be the last char.
-//   * Otherwise, the next line is not blank and we should continue onto that line
-// Set the index to the new line.
-
 func (session *EditSession) moveCursorDown() {
 	cursor := session.cursor
-	if cursor.y == session.numLines() {
+	if cursor.y == session.numLines()-1 {
 		return
 	}
 
@@ -214,11 +211,15 @@ func (session *EditSession) moveCursorDown() {
 	usedCells := session.usedCellsInLine(newY)
 	newValid := cursor.x < usedCells
 
-	idx := cursor.idx
-	ch := session.buf.Get(cursor.idx)
-	for ch != '\n' && idx < session.buf.Len()-1 {
-		idx += 1
-		ch = session.buf.Get(idx)
+	// idx to next \n, not including current character
+	idx := cursor.idx + 1
+	for {
+		if idx >= session.buf.Len() {
+			break
+		}
+		if session.buf.Get(idx) == '\n' {
+			break
+		}
 	}
 
 	var newIdx int
@@ -336,7 +337,7 @@ mainloop:
 				session.moveCursorDown()
 				logger.logMessage(fmt.Sprintf("cursor at :%v", session.cursor))
 			}
-			// TODO: move up and move down
+			// TODO: move up
 		}
 		termbox.Clear(termbox.ColorWhite, termbox.ColorDefault)
 		session.display()
