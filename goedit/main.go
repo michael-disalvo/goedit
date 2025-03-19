@@ -111,14 +111,17 @@ func numCellsFromGapBuf(buf *gapbuf.GapBuffer) []int {
 	return numCells
 }
 
-func buildEditSession(filename string) (editSession EditSession, err error) {
+func editSessionFromFile(filename string) (editSession EditSession, err error) {
 	file, err := os.Open(filename)
 	if err != nil {
 		return
 	}
 	defer file.Close()
+	return buildEditSession(file, filename)
+}
 
-	buf, err := gapBufFromReader(file)
+func buildEditSession(rdr io.Reader, filename string) (editSession EditSession, err error) {
+	buf, err := gapBufFromReader(rdr)
 	if err != nil {
 		return
 	}
@@ -304,7 +307,7 @@ func main() {
 	}
 	defer logger.Close()
 
-	session, err := buildEditSession(os.Args[1])
+	session, err := editSessionFromFile(os.Args[1])
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
