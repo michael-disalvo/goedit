@@ -214,8 +214,15 @@ func (session *EditSession) moveCursorDown() {
 	usedCells := session.usedCellsInLine(newY)
 	newValid := cursor.x < usedCells
 
+	var idx int
+	if cursor.x == 0 && cursor.y == 0 && !cursor.valid {
+		// special case if first character in the buffer is \n
+		idx = cursor.idx
+	} else {
+		idx = cursor.idx + 1
+	}
+
 	// idx to next \n, not including current character
-	idx := cursor.idx + 1
 	for {
 		if idx >= session.buf.Len() {
 			break
@@ -223,6 +230,7 @@ func (session *EditSession) moveCursorDown() {
 		if session.buf.Get(idx) == '\n' {
 			break
 		}
+		idx += 1
 	}
 
 	var newIdx int
@@ -254,6 +262,7 @@ func (session *EditSession) moveCursorDown() {
 			}
 			currX += nextWidth
 			idx += 1
+
 		}
 	}
 
