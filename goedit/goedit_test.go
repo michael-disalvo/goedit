@@ -25,6 +25,115 @@ func newEditSession(s string) EditSession {
 	return session
 }
 
+const test_text string = `
+h👍ello world!
+skipped     a line, now on the third line
+
+    this line should be tabbed
+    😁
+this is a hard one
+
+last line was empty
+`
+
+func TestMoveDownHard(t *testing.T) {
+	session := newEditSession(test_text)
+	expected := Cursor{0, 0, 0, false}
+	if session.cursor != expected {
+		t.Errorf("expected cursor to start at %v but got %v", expected, session.cursor)
+	}
+
+	session.moveCursorDown()
+	expected = Cursor{0, 1, 1, true}
+	if session.cursor != expected {
+		t.Errorf("expected cursor to be at %v but got %v", expected, session.cursor)
+	}
+}
+
+func TestMoveDownEasy(t *testing.T) {
+	text := "first\tline\nsecond line\n\nfourth line"
+	session := newEditSession(text)
+
+	session.moveCursorDown()
+	expectedCursor := Cursor{0, 1, 11, true}
+	if session.cursor != expectedCursor {
+		t.Errorf("expected cursor to be %v but got %v", expectedCursor, session.cursor)
+	}
+
+	session.moveCursorDown()
+	expectedCursor = Cursor{0, 2, 22, false}
+	if session.cursor != expectedCursor {
+		t.Errorf("expected cursor to be %v but got %v", expectedCursor, session.cursor)
+	}
+
+	session.moveCursorDown()
+	expectedCursor = Cursor{0, 3, 24, true}
+	if session.cursor != expectedCursor {
+		t.Errorf("expected cursor to be %v but got %v", expectedCursor, session.cursor)
+	}
+
+	session.moveCursorDown()
+	expectedCursor = Cursor{0, 4, 34, false}
+	if session.cursor != expectedCursor {
+		t.Errorf("expected cursor to be %v but got %v", expectedCursor, session.cursor)
+	}
+}
+
+func TestMoveLeft(t *testing.T) {
+	text := "first\tline\nsecond line\n\nfourth line"
+	session := newEditSession(text)
+
+	expectedCursor := Cursor{0, 0, 0, true}
+	session.moveCursorLeft()
+	if session.cursor != expectedCursor {
+		t.Errorf("expected cursor to be %v but got %v", expectedCursor, session.cursor)
+	}
+
+	session.cursor = Cursor{13, 0, 9, false}
+	expectedCursor = Cursor{12, 0, 9, true}
+	session.moveCursorLeft()
+	if session.cursor != expectedCursor {
+		t.Errorf("expected cursor to be %v but got %v", expectedCursor, session.cursor)
+	}
+
+	expectedCursor = Cursor{11, 0, 8, true}
+	session.moveCursorLeft()
+	if session.cursor != expectedCursor {
+		t.Errorf("expected cursor to be %v but got %v", expectedCursor, session.cursor)
+	}
+
+	session.moveCursorLeft()
+	session.moveCursorLeft()
+	session.moveCursorLeft()
+
+	expectedCursor = Cursor{5, 0, 5, true}
+	if session.cursor != expectedCursor {
+		t.Errorf("expected cursor to be %v but got %v", expectedCursor, session.cursor)
+	}
+
+	session.cursor = Cursor{11, 3, 34, false}
+	session.moveCursorLeft()
+
+	expectedCursor = Cursor{10, 3, 34, true}
+	if session.cursor != expectedCursor {
+		t.Errorf("expected cursor to be %v but got %v", expectedCursor, session.cursor)
+	}
+
+	session.moveCursorLeft()
+	expectedCursor = Cursor{9, 3, 33, true}
+	if session.cursor != expectedCursor {
+		t.Errorf("expected cursor to be %v but got %v", expectedCursor, session.cursor)
+	}
+
+	session.cursor = Cursor{0, 1, 11, true}
+	session.moveCursorLeft()
+	expectedCursor = Cursor{0, 1, 11, true}
+	if session.cursor != expectedCursor {
+		t.Errorf("expected cursor to be %v but got %v", expectedCursor, session.cursor)
+	}
+
+}
+
 func TestMoveRight(t *testing.T) {
 	text := "first\tline\nsecond line\n\nfourth line"
 
