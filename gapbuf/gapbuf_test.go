@@ -31,6 +31,17 @@ func TestNewGapBuffer(t *testing.T) {
 	}
 }
 
+func TestGapBufferPush(t *testing.T) {
+	buf := NewGapBuffer()
+	runes := []rune{'1', '2', '3', '4'}
+	for i, ch := range runes {
+		buf.Push(ch)
+		if buf.Get(i) != ch {
+			t.Errorf("buf.Get(%v) expected %v, got %v", i, ch, buf.Get(i))
+		}
+	}
+}
+
 func TestGapBufferGet(t *testing.T) {
 	buf := testGapBuffer()
 
