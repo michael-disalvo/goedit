@@ -13,7 +13,8 @@ import (
 )
 
 type Cursor struct {
-	index int
+	index            int
+	targetCellOffset int
 }
 
 func LineOfIndex(buf *Buffer, index int) int {
@@ -40,7 +41,8 @@ func IndexToGrid(buf *Buffer, index int) (int, int) {
 
 func NewCursor() *Cursor {
 	return &Cursor{
-		index: 0,
+		index:            0,
+		targetCellOffset: 0,
 	}
 }
 
@@ -50,20 +52,29 @@ func DisplayCursor(cursor *Cursor, buf *Buffer) {
 	termbox.SetCursor(x, y)
 }
 
+func RuneOffsetForCellOffset(buf *Buffer, y int, targetCellOffset int) (runeOffset int) {
+	index := buf.lineStarts[y]
+	currCellOffset := 0
+	runesInLine := buf.NumRunesInLine(y)
+
+	for currCellOffset < targetCellOffset && runeOffset < runesInLine {
+		currCellOffset += runeWidth(buf.text[index])
+		index += 1
+		runeOffset += 1
+	}
+
+	return
+}
+
 func MoveCursorUp(cursor *Cursor, buf *Buffer) {
 	y := LineOfIndex(buf, cursor.index)
-	indexInLine := cursor.index - buf.lineStarts[y]
 
 	if y > 0 {
 		prevLineStart := buf.lineStarts[y-1]
-		runesInPrevLine := buf.NumRunesInLine(y - 1)
-		if indexInLine > runesInPrevLine {
-			indexInLine = runesInPrevLine
-		}
 
-		newIndex := prevLineStart + indexInLine
+		runeOffset := RuneOffsetForCellOffset(buf, y-1, cursor.targetCellOffset)
 
-		cursor.index = newIndex
+		cursor.index = prevLineStart + runeOffset
 
 		if y-1 < buf.windowOffset {
 			buf.windowOffset -= 1
@@ -73,19 +84,12 @@ func MoveCursorUp(cursor *Cursor, buf *Buffer) {
 
 func MoveCursorDown(cursor *Cursor, buf *Buffer, height int) {
 	y := LineOfIndex(buf, cursor.index)
-	indexInLine := cursor.index - buf.lineStarts[y]
 
 	numLines := len(buf.lineStarts)
 	if y+1 < numLines {
 		nextLineStart := buf.lineStarts[y+1]
-		runesInNextLine := buf.NumRunesInLine(y + 1)
-		if indexInLine > runesInNextLine {
-			indexInLine = runesInNextLine
-		}
-
-		newIndex := nextLineStart + indexInLine
-
-		cursor.index = newIndex
+		runeOffset := RuneOffsetForCellOffset(buf, y+1, cursor.targetCellOffset)
+		cursor.index = nextLineStart + runeOffset
 		if y+1 >= buf.windowOffset+height {
 			buf.windowOffset += 1
 		}
@@ -99,6 +103,7 @@ func MoveCursorRight(cursor *Cursor, buf *Buffer) {
 	indexInLine := cursor.index - buf.lineStarts[y]
 
 	if indexInLine < numRunesInLine {
+		cursor.targetCellOffset += runeWidth(buf.text[cursor.index])
 		cursor.index += 1
 	}
 }
@@ -108,6 +113,7 @@ func MoveCursorLeft(cursor *Cursor, buf *Buffer) {
 	indexInLine := cursor.index - buf.lineStarts[y]
 	if indexInLine > 0 {
 		cursor.index -= 1
+		cursor.targetCellOffset -= runeWidth(buf.text[cursor.index])
 	}
 }
 
