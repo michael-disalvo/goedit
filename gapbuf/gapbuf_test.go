@@ -1,6 +1,7 @@
 package gapbuf
 
 import (
+	"slices"
 	"testing"
 )
 
@@ -16,6 +17,34 @@ func testGapBuffer() GapBuffer {
 		gapStart: 2,
 		gapLen:   3,
 	}
+}
+
+func TestGapBufferSlice(t *testing.T) {
+	buf := testGapBuffer()
+	s := buf.Slice(0, 0)
+	expected := []rune{}
+	if slices.Compare(s, expected) != 0 {
+		t.Errorf("exepcted %v but got %v", string(expected), string(s))
+	}
+
+	s = buf.Slice(0, 1)
+	expected = []rune{'h'}
+	if slices.Compare(s, expected) != 0 {
+		t.Errorf("exepcted %v but got %v", string(expected), string(s))
+	}
+
+	s = buf.Slice(0, 3)
+	expected = []rune{'h', 'e', 'l'}
+	if slices.Compare(s, expected) != 0 {
+		t.Errorf("exepcted %v but got %v", string(expected), string(s))
+	}
+
+	s = buf.Slice(0, 5)
+	expected = []rune{'h', 'e', 'l', 'l', 'o'}
+	if slices.Compare(s, expected) != 0 {
+		t.Errorf("exepcted %v but got %v", string(expected), string(s))
+	}
+
 }
 
 func TestNewGapBuffer(t *testing.T) {

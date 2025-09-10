@@ -124,3 +124,11 @@ func (self *GapBuffer) Remove(idx int) (ch rune) {
 	self.gapLen++
 	return
 }
+
+func (self *GapBuffer) Slice(start int, end int) []rune {
+	runes := make([]rune, end-start)
+	for i := start; i < end; i++ {
+		runes[i] = self.Get(i)
+	}
+	return runes
+}
