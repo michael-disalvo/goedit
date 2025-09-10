@@ -9,6 +9,7 @@ import (
 	"slices"
 
 	"github.com/mattn/go-runewidth"
+	"github.com/michael-disalvo/gapbuf"
 	"github.com/nsf/termbox-go"
 )
 
@@ -32,7 +33,7 @@ func IndexToGrid(buf *Buffer, index int) (int, int) {
 	lineStartIndex := buf.lineStarts[y]
 
 	for i := lineStartIndex; i < index; i += 1 {
-		ch := buf.text[i]
+		ch := buf.text.Get(i)
 		x += runeWidth(ch)
 	}
 
@@ -58,7 +59,7 @@ func RuneOffsetForCellOffset(buf *Buffer, y int, targetCellOffset int) (runeOffs
 	runesInLine := buf.NumRunesInLine(y)
 
 	for currCellOffset < targetCellOffset && runeOffset < runesInLine {
-		currCellOffset += runeWidth(buf.text[index])
+		currCellOffset += runeWidth(buf.text.Get(index))
 		index += 1
 		runeOffset += 1
 	}
@@ -103,7 +104,7 @@ func MoveCursorRight(cursor *Cursor, buf *Buffer) {
 	indexInLine := cursor.index - buf.lineStarts[y]
 
 	if indexInLine < numRunesInLine {
-		cursor.targetCellOffset += runeWidth(buf.text[cursor.index])
+		cursor.targetCellOffset += runeWidth(buf.text.Get(cursor.index))
 		cursor.index += 1
 	}
 }
@@ -113,12 +114,12 @@ func MoveCursorLeft(cursor *Cursor, buf *Buffer) {
 	indexInLine := cursor.index - buf.lineStarts[y]
 	if indexInLine > 0 {
 		cursor.index -= 1
-		cursor.targetCellOffset -= runeWidth(buf.text[cursor.index])
+		cursor.targetCellOffset -= runeWidth(buf.text.Get(cursor.index))
 	}
 }
 
 type Buffer struct {
-	text         []rune
+	text         *gapbuf.GapBuffer
 	lineStarts   []int
 	windowOffset int
 }
@@ -128,7 +129,7 @@ func SetCell(x, y int, ch rune) {
 }
 
 func (buf *Buffer) String() string {
-	return fmt.Sprintf("%v\n=====\nLineStarts:%v", string(buf.text[:len(buf.text)-1]), buf.lineStarts)
+	return fmt.Sprintf("%v\n=====\nLineStarts:%v", string(buf.text.Slice(0, buf.text.Len()-1)), buf.lineStarts)
 }
 
 func (buf *Buffer) NumRunesInLine(y int) (numRunesInLine int) {
@@ -136,31 +137,28 @@ func (buf *Buffer) NumRunesInLine(y int) (numRunesInLine int) {
 	if y+1 < len(buf.lineStarts) {
 		numRunesInLine = buf.lineStarts[y+1] - lineStart - 1
 	} else {
-		numRunesInLine = len(buf.text) - lineStart - 1
+		numRunesInLine = buf.text.Len() - lineStart - 1
 	}
 	return numRunesInLine
 }
 
 func (buf *Buffer) InsertRune(ch rune, index int) {
-	newText := slices.Insert(buf.text, index, ch)
-	newLineStarts := BuildLineStarts(newText)
-
-	buf.text = newText
+	buf.text.Insert(index, ch)
+	newLineStarts := BuildLineStarts(buf.text)
 	buf.lineStarts = newLineStarts
 }
 
 func (buf *Buffer) RemoveRune(index int) {
 	if index >= 0 {
-		newText := slices.Delete(buf.text, index, index+1)
-		newLineStarts := BuildLineStarts(newText)
+		buf.text.Remove(index)
+		newLineStarts := BuildLineStarts(buf.text)
 
-		buf.text = newText
 		buf.lineStarts = newLineStarts
 	}
 }
 
 func (buf *Buffer) JustText() []byte {
-	return []byte(string(buf.text[:len(buf.text)-1]))
+	return []byte(string(buf.text.Slice(0, buf.text.Len()-1)))
 }
 
 func (buf *Buffer) Display(height int) {
@@ -171,7 +169,7 @@ func (buf *Buffer) Display(height int) {
 		numRunesInLine := buf.NumRunesInLine(y)
 		x = 0
 		for i := lineStart; i < lineStart+numRunesInLine; i += 1 {
-			ch := buf.text[i]
+			ch := buf.text.Get(i)
 			SetCell(x, y-buf.windowOffset, ch)
 			x += runeWidth(ch)
 		}
@@ -179,14 +177,14 @@ func (buf *Buffer) Display(height int) {
 
 }
 
-func isLineStart(text []rune, i int) bool {
-	return i == 0 || text[i-1] == '\n'
+func isLineStart(text *gapbuf.GapBuffer, i int) bool {
+	return i == 0 || text.Get(i-1) == '\n'
 }
 
-func BuildLineStarts(text []rune) []int {
+func BuildLineStarts(text *gapbuf.GapBuffer) []int {
 
 	lineStarts := make([]int, 0)
-	for i := range text {
+	for i := 0; i < text.Len(); i++ {
 		if isLineStart(text, i) {
 			lineStarts = append(lineStarts, i)
 		}
@@ -198,7 +196,7 @@ func BuildLineStarts(text []rune) []int {
 func NewBuffer(r io.Reader) (*Buffer, error) {
 	bufReader := bufio.NewReader(r)
 
-	text := make([]rune, 0)
+	text := gapbuf.NewGapBuffer()
 
 	for {
 		ch, _, err := bufReader.ReadRune()
@@ -209,15 +207,15 @@ func NewBuffer(r io.Reader) (*Buffer, error) {
 			return nil, fmt.Errorf("error trying to build buffer: %w", err)
 		}
 
-		text = append(text, ch)
+		text.Push(ch)
 	}
 
-	text = append(text, -1)
+	text.Push(-1)
 
-	lineStarts := BuildLineStarts(text)
+	lineStarts := BuildLineStarts(&text)
 
 	buf := &Buffer{
-		text,
+		&text,
 		lineStarts,
 		0,
 	}
